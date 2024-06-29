@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -49,7 +50,7 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 
 		Attributes: map[string]schema.Attribute{
 			"uid": schema.StringAttribute{
-				MarkdownDescription: "The ID of the user to set the quota for.",
+				MarkdownDescription: "The UID of the user to set the quota for.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -69,8 +70,8 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "Enable or disable the quota",
 				Optional:            true,
 				Computed:            true,
+				Default:             booldefault.StaticBool(true),
 				PlanModifiers: []planmodifier.Bool{
-					boolDefaultModifier{true},
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
@@ -78,8 +79,8 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "???",
 				Optional:            true,
 				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 				PlanModifiers: []planmodifier.Bool{
-					boolDefaultModifier{false},
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
@@ -93,7 +94,6 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				Computed:            true,
 				Default:             int64default.StaticInt64(0),
 				PlanModifiers: []planmodifier.Int64{
-					//int64DefaultModifier{0},
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
@@ -101,8 +101,8 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "The maximum number of objects in the quota",
 				Optional:            true,
 				Computed:            true,
+				Default:             int64default.StaticInt64(-1),
 				PlanModifiers: []planmodifier.Int64{
-					int64DefaultModifier{-1},
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
