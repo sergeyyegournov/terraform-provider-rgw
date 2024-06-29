@@ -29,15 +29,6 @@ type BucketLinkResourceModel struct {
 	Bucket                 types.String   `tfsdk:"bucket"`
 }
 
-func findString(slice []string, str string) bool {
-    for _, item := range slice {
-        if item == str {
-            return true
-        }
-    }
-    return false
-}
-
 func (r *BucketLinkResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_bucket_link"
 }
@@ -128,6 +119,15 @@ func (r *BucketLinkResource) Read(ctx context.Context, req resource.ReadRequest,
 		}
 		resp.Diagnostics.AddError("could not get user's buckets", err.Error())
 		return
+	}
+
+	findString := func (slice []string, str string) bool {
+		for _, item := range slice {
+			if item == str {
+				return true
+			}
+		}
+		return false
 	}
 
 	if !findString(buckets, data.Bucket.ValueString()) {
