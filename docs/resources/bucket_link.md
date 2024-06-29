@@ -3,12 +3,12 @@
 page_title: "rgw_bucket_link Resource - terraform-provider-rgw"
 subcategory: ""
 description: |-
-  Bucket Link in Ceph RGW
+  Ceph RGW Bucket Link. This resource allow to change bucket ownership in Ceph. It supports reverting ownership upon resource destruction
 ---
 
-# rgw_bucket (Resource)
+# rgw_bucket_link (Resource)
 
-Bucket in Ceph RGW
+Ceph RGW Bucket Link. This resource allow to change bucket ownership in Ceph. It supports reverting ownership upon resource destruction
 
 
 
@@ -17,7 +17,9 @@ Bucket in Ceph RGW
 
 ### Required
 
-- `name` (String) Bucket Name
-- `uid` (String) User ID
+- `bucket` (String) The bucket name to link with a user
+- `uid` (String) The user ID to be linked with a bucket
 
+### Optional
 
+- `unlink_to_uid` (String) The UID of a user to link bucket to when resource is destroyed

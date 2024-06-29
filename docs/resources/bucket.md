@@ -22,5 +22,3 @@ Bucket in Ceph RGW
 ### Read-Only
 
 - `id` (String) Example identifier
-
-

@@ -46,5 +46,3 @@ Required:
 
 - `perm` (String)
 - `type` (String)
-
-

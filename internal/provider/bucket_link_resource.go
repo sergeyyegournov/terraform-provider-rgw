@@ -36,7 +36,7 @@ func (r *BucketLinkResource) Metadata(ctx context.Context, req resource.Metadata
 
 func (r *BucketLinkResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Ceph RGW Bucket Link",
+		MarkdownDescription: "Ceph RGW Bucket Link. This resource allow to change bucket ownership in Ceph. It supports reverting ownership upon resource destruction",
 
 		Attributes: map[string]schema.Attribute{
 			"uid": schema.StringAttribute{
