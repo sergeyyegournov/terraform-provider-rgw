@@ -119,7 +119,7 @@ func (p *RgwProvider) Resources(ctx context.Context) []func() resource.Resource 
 		NewUserResource,
 		NewBucketPolicyResource,
 		NewBucketLinkResource,
-		NewUserQuotaResource,
+		NewQuotaResource,
 	}
 }
 

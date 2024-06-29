@@ -6,40 +6,44 @@ import (
 	"fmt"
 
 	"github.com/ceph/go-ceph/rgw/admin"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
-var _ resource.ResourceWithConfigure = &UserQuotaResource{}
+var _ resource.ResourceWithConfigure = &QuotaResource{}
 
-func NewUserQuotaResource() resource.Resource {
-	return &UserQuotaResource{}
+func NewQuotaResource() resource.Resource {
+	return &QuotaResource{}
 }
 
-type UserQuotaResource struct {
+type QuotaResource struct {
 	client *RgwClient
 }
 
-type UserQuotaResourceModel struct {
-	UID                    types.String   `tfsdk:"uid"`
-	Enabled                types.Bool     `tfsdk:"enabled"`
-	CheckOnRaw             types.Bool     `tfsdk:"check_on_raw"`
-	MaxSize                types.Int64    `tfsdk:"max_size"`
-	MaxSizeKB              types.Int64    `tfsdk:"max_size_kb"`
-	MaxObjects			   types.Int64    `tfsdk:"max_objects"`
+type QuotaResourceModel struct {
+	UID        types.String `tfsdk:"uid"`
+	Type       types.String `tfsdk:"type"`
+	Enabled    types.Bool   `tfsdk:"enabled"`
+	CheckOnRaw types.Bool   `tfsdk:"check_on_raw"`
+	MaxSize    types.Int64  `tfsdk:"max_size"`
+	MaxSizeKB  types.Int64  `tfsdk:"max_size_kb"`
+	MaxObjects types.Int64  `tfsdk:"max_objects"`
 }
 
-func (r *UserQuotaResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+func (r *QuotaResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_quota"
 }
 
-func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "This resource can be used to set the quota for a rgw user. Refer to the Ceph RGW Admin Ops API documentation for values documentation. Upon deletion, quota is disabled.",
 
@@ -47,6 +51,16 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 			"uid": schema.StringAttribute{
 				MarkdownDescription: "The ID of the user to set the quota for.",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"type": schema.StringAttribute{
+				MarkdownDescription: "The ID of the user to set the quota for.",
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.OneOf([]string{"user", "bucket"}...),
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -71,17 +85,15 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 			},
 			"max_size": schema.Int64Attribute{
 				MarkdownDescription: "The maximum size of the quota",
-				Optional:            true,
 				Computed:            true,
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.UseStateForUnknown(),
-				},
 			},
 			"max_size_kb": schema.Int64Attribute{
 				MarkdownDescription: "The maximum size of the quota in kilobytes",
 				Optional:            true,
 				Computed:            true,
+				Default:             int64default.StaticInt64(0),
 				PlanModifiers: []planmodifier.Int64{
+					//int64DefaultModifier{0},
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
@@ -90,6 +102,7 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.Int64{
+					int64DefaultModifier{-1},
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
@@ -97,7 +110,7 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 	}
 }
 
-func (r *UserQuotaResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *QuotaResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
@@ -117,23 +130,22 @@ func (r *UserQuotaResource) Configure(ctx context.Context, req resource.Configur
 	r.client = client
 }
 
-func rgwQuotaFromSchemaQuota(data *UserQuotaResourceModel) admin.QuotaSpec {
+func rgwQuotaFromSchemaQuota(data *QuotaResourceModel) admin.QuotaSpec {
 	enabled := data.Enabled.ValueBool()
 	quota := admin.QuotaSpec{
 		UID:        data.UID.ValueString(),
-		QuotaType:  "user",
+		QuotaType:  data.Type.ValueString(),
 		Enabled:    &enabled,
 		CheckOnRaw: data.CheckOnRaw.ValueBool(),
 	}
 
-	if !data.MaxSize.IsNull() {
-		maxSize := data.MaxSize.ValueInt64()
-		quota.MaxSize = &maxSize
-	}
-
-	if !data.MaxSizeKB.IsNull() {
+	// treat 0 as max_size quote disabled
+	if !data.MaxSizeKB.IsNull() && data.MaxSizeKB.ValueInt64() != 0 {
 		maxSizeKb := int(data.MaxSizeKB.ValueInt64())
 		quota.MaxSizeKb = &maxSizeKb
+	} else {
+		maxSize := int64(-1)
+		quota.MaxSize = &maxSize
 	}
 
 	if !data.MaxObjects.IsNull() {
@@ -144,9 +156,9 @@ func rgwQuotaFromSchemaQuota(data *UserQuotaResourceModel) admin.QuotaSpec {
 	return quota
 }
 
-func (r *UserQuotaResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+func (r *QuotaResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	// Read Terraform plan data into the model
-	var data *UserQuotaResourceModel
+	var data *QuotaResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -154,19 +166,30 @@ func (r *UserQuotaResource) Create(ctx context.Context, req resource.CreateReque
 
 	quota := rgwQuotaFromSchemaQuota(data)
 
-	err := r.client.Admin.SetUserQuota(ctx, quota)
+	var err error
+	if data.Type.ValueString() == "user" {
+		err = r.client.Admin.SetUserQuota(ctx, quota)
+	} else {
+		err = r.client.Admin.SetBucketQuota(ctx, quota)
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("could not create user quota", err.Error())
 		return
+	}
+
+	if data.MaxSizeKB.ValueInt64() != 0 {
+		data.MaxSize = types.Int64Value(data.MaxSizeKB.ValueInt64() * 1024)
+	} else {
+		data.MaxSize = types.Int64Value(-1)
 	}
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *UserQuotaResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+func (r *QuotaResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Read Terraform prior state data into the model
-	var data *UserQuotaResourceModel
+	var data *QuotaResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -178,7 +201,13 @@ func (r *UserQuotaResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	// get user quota
-	quotaSpec, err := r.client.Admin.GetUserQuota(ctx, reqQuotaSpec)
+	var err error
+	var quotaSpec admin.QuotaSpec
+	if data.Type.ValueString() == "user" {
+		quotaSpec, err = r.client.Admin.GetUserQuota(ctx, reqQuotaSpec)
+	} else {
+		quotaSpec, err = r.client.Admin.GetBucketQuota(ctx, reqQuotaSpec)
+	}
 	if err != nil {
 		if errors.Is(err, admin.ErrNoSuchUser) {
 			// Remove user from state
@@ -186,12 +215,6 @@ func (r *UserQuotaResource) Read(ctx context.Context, req resource.ReadRequest, 
 			return
 		}
 		resp.Diagnostics.AddError("could not get user quota", err.Error())
-		return
-	}
-
-	// check resource id
-	if data.UID.ValueString() != quotaSpec.UID {
-		resp.Diagnostics.AddError("api returned wrong user", fmt.Sprintf("expected user '%s', got '%s'", data.UID.ValueString(), quotaSpec.UID))
 		return
 	}
 
@@ -213,9 +236,9 @@ func (r *UserQuotaResource) Read(ctx context.Context, req resource.ReadRequest, 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *UserQuotaResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+func (r *QuotaResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	// Read Terraform plan data into the model
-	var data *UserQuotaResourceModel
+	var data *QuotaResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -223,19 +246,29 @@ func (r *UserQuotaResource) Update(ctx context.Context, req resource.UpdateReque
 
 	quota := rgwQuotaFromSchemaQuota(data)
 
-	err := r.client.Admin.SetUserQuota(ctx, quota)
+	var err error
+	if data.Type.ValueString() == "user" {
+		err = r.client.Admin.SetUserQuota(ctx, quota)
+	} else {
+		err = r.client.Admin.SetBucketQuota(ctx, quota)
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("could not modify user quota", err.Error())
 		return
+	}
+	if data.MaxSizeKB.ValueInt64() != 0 {
+		data.MaxSize = types.Int64Value(data.MaxSizeKB.ValueInt64() * 1024)
+	} else {
+		data.MaxSize = types.Int64Value(-1)
 	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *UserQuotaResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+func (r *QuotaResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Read Terraform prior state data into the model
-	var data *UserQuotaResourceModel
+	var data *QuotaResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -244,8 +277,18 @@ func (r *UserQuotaResource) Delete(ctx context.Context, req resource.DeleteReque
 	quota := rgwQuotaFromSchemaQuota(data)
 	f := false
 	quota.Enabled = &f
+	maxSize := int64(-1)
+	quota.MaxSize = &maxSize
+	quota.MaxSizeKb = nil
+	maxObjects := int64(-1)
+	quota.MaxObjects = &maxObjects
 
-	err := r.client.Admin.SetUserQuota(ctx, quota)
+	var err error
+	if data.Type.ValueString() == "user" {
+		err = r.client.Admin.SetUserQuota(ctx, quota)
+	} else {
+		err = r.client.Admin.SetBucketQuota(ctx, quota)
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("could not modify user quota", err.Error())
 		return
