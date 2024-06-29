@@ -25,8 +25,9 @@ type BucketLinkResource struct {
 }
 
 type BucketLinkResourceModel struct {
-	UID                    types.String   `tfsdk:"uid"`
-	Bucket                 types.String   `tfsdk:"bucket"`
+	UID         types.String `tfsdk:"uid"`
+	Bucket      types.String `tfsdk:"bucket"`
+	UnlinkToUID types.String `tfsdk:"unlink_to_uid"`
 }
 
 func (r *BucketLinkResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -51,6 +52,10 @@ func (r *BucketLinkResource) Schema(ctx context.Context, req resource.SchemaRequ
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+			},
+			"unlink_to_uid": schema.StringAttribute{
+				MarkdownDescription: "The UID of a user to link bucket to when resource is destroyed",
+				Optional:            true,
 			},
 		},
 	}
@@ -87,9 +92,9 @@ func (r *BucketLinkResource) Create(ctx context.Context, req resource.CreateRequ
 	// Create API user object
 	rgwBucketLink := admin.BucketLinkInput{
 		Bucket: data.Bucket.ValueString(),
-		UID: data.UID.ValueString(),
+		UID:    data.UID.ValueString(),
 	}
-	
+
 	// create bucket link
 	err := r.client.Admin.LinkBucket(ctx, rgwBucketLink)
 	if err != nil {
@@ -121,7 +126,7 @@ func (r *BucketLinkResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	findString := func (slice []string, str string) bool {
+	findString := func(slice []string, str string) bool {
 		for _, item := range slice {
 			if item == str {
 				return true
@@ -162,11 +167,20 @@ func (r *BucketLinkResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	// send delete request to api
-	err := r.client.Admin.UnlinkBucket(ctx, admin.BucketLinkInput{
-		Bucket:    data.Bucket.ValueString(),
-		UID:       data.UID.ValueString(),
-	})
+	var err error
+	if data.UnlinkToUID.IsNull() {
+		// send delete request to api
+		err = r.client.Admin.UnlinkBucket(ctx, admin.BucketLinkInput{
+			Bucket: data.Bucket.ValueString(),
+			UID:    data.UID.ValueString(),
+		})
+	} else {
+		// send link request to api
+		err = r.client.Admin.LinkBucket(ctx, admin.BucketLinkInput{
+			Bucket: data.Bucket.ValueString(),
+			UID:    data.UnlinkToUID.ValueString(),
+		})
+	}
 	if err != nil && !errors.Is(err, admin.ErrNoSuchBucket) {
 		resp.Diagnostics.AddError("could not delete bucket link", err.Error())
 		return
