@@ -57,7 +57,7 @@ func (r *QuotaResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				},
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: "The ID of the user to set the quota for.",
+				MarkdownDescription: "Quota type - can be either `user` or `bucket` (for buckets owned by user).",
 				Required:            true,
 				Validators: []validator.String{
 					stringvalidator.OneOf([]string{"user", "bucket"}...),
