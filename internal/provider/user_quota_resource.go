@@ -56,7 +56,7 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.Bool{
-					boolDefaultModifier{false},
+					boolDefaultModifier{true},
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
