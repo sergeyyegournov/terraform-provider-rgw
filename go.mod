@@ -1,14 +1,14 @@
 module gitlab.startnext.org/sre/terraform/terraform-provider-rgw
 
-go 1.19
+go 1.21
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.17.4
-	github.com/aws/smithy-go v1.13.5
+	github.com/aws/aws-sdk-go-v2 v1.30.1
+	github.com/aws/smithy-go v1.20.3
 	github.com/ceph/go-ceph v0.28.0
 	github.com/hashicorp/terraform-plugin-docs v0.13.0
 	github.com/hashicorp/terraform-plugin-framework v1.9.0
-	github.com/hashicorp/terraform-plugin-framework-validators v0.9.0
+	github.com/hashicorp/terraform-plugin-framework-validators v0.12.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 )
 
