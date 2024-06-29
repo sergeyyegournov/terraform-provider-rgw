@@ -486,6 +486,9 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
+	data.Id = types.StringValue(user.ID)
+	data.Principal = types.StringValue(fmt.Sprintf("arn:aws:iam::%s:user/%s", data.Tenant.ValueString(), data.Username.ValueString()))
+
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
