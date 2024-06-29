@@ -8,7 +8,8 @@ import (
 	"github.com/ceph/go-ceph/rgw/admin"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -53,27 +54,44 @@ func (r *UserQuotaResource) Schema(ctx context.Context, req resource.SchemaReque
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Enable or disable the quota",
 				Optional:            true,
-				Default: booldefault.StaticBool(true),
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolDefaultModifier{false},
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"check_on_raw": schema.BoolAttribute{
 				MarkdownDescription: "???",
 				Optional:            true,
-				Default: booldefault.StaticBool(false),
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolDefaultModifier{false},
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"max_size": schema.Int64Attribute{
 				MarkdownDescription: "The maximum size of the quota",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"max_size_kb": schema.Int64Attribute{
 				MarkdownDescription: "The maximum size of the quota in kilobytes",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"max_objects": schema.Int64Attribute{
 				MarkdownDescription: "The maximum number of objects in the quota",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
