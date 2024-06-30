@@ -501,12 +501,24 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
+	// get user's buckets
+	buckets, err := r.client.Admin.ListUsersBuckets(ctx, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("could not get user's buckets", err.Error())
+		return
+	}
+
+	if len(buckets) > 0 {
+		resp.Diagnostics.AddError("could not delete user", fmt.Sprintf("user %s still owns these buckets: %v", data.Id.ValueString(), buckets))
+		return
+	}
+
 	// send delete request to api
 	purgeData := 0
 	if data.PurgeDataOnDelete.ValueBool() {
 		purgeData = 1
 	}
-	err := r.client.Admin.RemoveUser(ctx, admin.User{
+	err = r.client.Admin.RemoveUser(ctx, admin.User{
 		ID:        data.Id.ValueString(),
 		PurgeData: &purgeData,
 	})
