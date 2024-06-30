@@ -152,6 +152,7 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "The generated access key",
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 					stringPrivateUnknownModifier{"access_key"},
 				},
 			},
@@ -160,6 +161,7 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				Computed:            true,
 				//Sensitive:           true,
 				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 					stringPrivateUnknownModifier{"secret_key"},
 				},
 			},
@@ -347,6 +349,8 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 
 	// update credentials
+	tflog.Info(ctx, fmt.Sprintf("In Read: Keys returned from API %v", user.Keys))
+	tflog.Info(ctx, fmt.Sprintf("In Read: State access_key %s, secret_key %s", data.AccessKey.ValueString(), data.SecretKey.ValueString()))
 	if data.GenerateS3Credentials.ValueBool() || data.GenerateS3Credentials.IsNull() {
 		found := false
 		if data.AccessKey.IsNull() || data.AccessKey.IsUnknown() {
@@ -429,14 +433,67 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	// manage s3 keys
-	tflog.Info(ctx, fmt.Sprintf("Access Key unknown: %t, Secret Key unknown: %t", data.AccessKey.IsUnknown(), data.SecretKey.IsUnknown()))
-	if data.SecretKey.IsUnknown() {
-		if len(user.Keys) > 0 {
-			for _, k := range user.Keys {
-				if !data.AccessKey.IsNull() && data.SecretKey.IsUnknown() && k.AccessKey == data.AccessKey.ValueString() {
-					data.SecretKey = types.StringValue(k.SecretKey)
+	tflog.Info(ctx, fmt.Sprintf("In Update: Keys returned from API %v", user.Keys))
+	if data.GenerateS3Credentials.ValueBool() || data.GenerateS3Credentials.IsNull() {
+		tflog.Info(ctx, fmt.Sprintf("Access Key unknown: %t, Secret Key unknown: %t", data.AccessKey.IsUnknown(), data.SecretKey.IsUnknown()))
+		if data.SecretKey.IsUnknown() {
+			if len(user.Keys) > 0 {
+				for _, k := range user.Keys {
+					if !data.AccessKey.IsNull() && data.SecretKey.IsUnknown() && k.AccessKey == data.AccessKey.ValueString() {
+						data.SecretKey = types.StringValue(k.SecretKey)
+						resp.Diagnostics.Append(resp.Private.SetKey(ctx, "mark_unknown_secret_key", []byte("0"))...)
+					} else if data.ExclusiveS3Credentials.ValueBool() || data.ExclusiveS3Credentials.IsNull() {
+						k.UID = user.ID
+						if err := r.client.Admin.RemoveKey(ctx, k); err != nil {
+							resp.Diagnostics.AddError(fmt.Sprintf("could not remove access key '%s'", k.AccessKey), err.Error())
+						}
+					}
+				}
+			}
+
+			if data.SecretKey.IsUnknown() {
+				tflog.Info(ctx, "Secret key still null")
+				if data.AccessKey.IsUnknown() {
+					a := make([]byte, 20)
+					for i := range a {
+						a[i] = accessKeyBytes[rand.Intn(len(accessKeyBytes))]
+					}
+					data.AccessKey = types.StringValue(string(a))
+				}
+
+				generate := true
+				keys, err := r.client.Admin.CreateKey(ctx, admin.UserKeySpec{
+					UID:         user.ID,
+					KeyType:     "s3",
+					GenerateKey: &generate,
+					AccessKey:   data.AccessKey.ValueString(),
+				})
+				if err != nil {
+					resp.Diagnostics.AddError("could not generate s3 credentials", err.Error())
+					return
+				}
+
+				if keys != nil {
+					for _, k := range *keys {
+						if k.AccessKey == data.AccessKey.ValueString() {
+							data.SecretKey = types.StringValue(k.SecretKey)
+							tflog.Info(ctx, "found generated secret key")
+							break
+						}
+					}
+				}
+
+				if data.SecretKey.IsUnknown() {
+					resp.Diagnostics.AddError("could not find expected s3 credentials in api response", fmt.Sprintf("got %d s3 key pairs back from api, none of the matched the access key '%s'", len(*keys), data.AccessKey.ValueString()))
+				} else {
+					resp.Diagnostics.Append(resp.Private.SetKey(ctx, "mark_unknown_access_key", []byte("0"))...)
 					resp.Diagnostics.Append(resp.Private.SetKey(ctx, "mark_unknown_secret_key", []byte("0"))...)
-				} else if data.ExclusiveS3Credentials.ValueBool() || data.ExclusiveS3Credentials.IsNull() {
+				}
+			}
+		} else if data.ExclusiveS3Credentials.ValueBool() || data.ExclusiveS3Credentials.IsNull() {
+			// Delete all other keys than the one found in state
+			for _, k := range user.Keys {
+				if k.AccessKey != data.AccessKey.ValueString() {
 					k.UID = user.ID
 					if err := r.client.Admin.RemoveKey(ctx, k); err != nil {
 						resp.Diagnostics.AddError(fmt.Sprintf("could not remove access key '%s'", k.AccessKey), err.Error())
@@ -444,46 +501,18 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 				}
 			}
 		}
-
-		if data.SecretKey.IsUnknown() {
-			tflog.Info(ctx, "Secret key still null")
-			if data.AccessKey.IsUnknown() {
-				a := make([]byte, 20)
-				for i := range a {
-					a[i] = accessKeyBytes[rand.Intn(len(accessKeyBytes))]
+	} else {
+		// if a user wants exclusive credentials delete all existing credentials
+		if data.ExclusiveS3Credentials.ValueBool() || data.ExclusiveS3Credentials.IsNull() {
+			for _, k := range user.Keys {
+				k.UID = user.ID
+				if err := r.client.Admin.RemoveKey(ctx, k); err != nil {
+					resp.Diagnostics.AddError(fmt.Sprintf("could not remove access key '%s'", k.AccessKey), err.Error())
 				}
-				data.AccessKey = types.StringValue(string(a))
-			}
-
-			generate := true
-			keys, err := r.client.Admin.CreateKey(ctx, admin.UserKeySpec{
-				UID:         user.ID,
-				KeyType:     "s3",
-				GenerateKey: &generate,
-				AccessKey:   data.AccessKey.ValueString(),
-			})
-			if err != nil {
-				resp.Diagnostics.AddError("could not generate s3 credentials", err.Error())
-				return
-			}
-
-			if keys != nil {
-				for _, k := range *keys {
-					if k.AccessKey == data.AccessKey.ValueString() {
-						data.SecretKey = types.StringValue(k.SecretKey)
-						tflog.Info(ctx, "found generated secret key")
-						break
-					}
-				}
-			}
-
-			if data.SecretKey.IsUnknown() {
-				resp.Diagnostics.AddError("could not find expected s3 credentials in api response", fmt.Sprintf("got %d s3 key pairs back from api, none of the matched the access key '%s'", len(*keys), data.AccessKey.ValueString()))
-			} else {
-				resp.Diagnostics.Append(resp.Private.SetKey(ctx, "mark_unknown_access_key", []byte("0"))...)
-				resp.Diagnostics.Append(resp.Private.SetKey(ctx, "mark_unknown_secret_key", []byte("0"))...)
 			}
 		}
+		data.AccessKey = types.StringNull()
+		data.SecretKey = types.StringNull()
 	}
 
 	data.Id = types.StringValue(user.ID)
@@ -528,26 +557,6 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 }
 
-/*
-	type boolEnforceDefaultValueModifier struct {
-		Default bool
-	}
-
-	func (m boolEnforceDefaultValueModifier) Description(ctx context.Context) string {
-		return fmt.Sprintf("If value is not configured, enforces %t", m.Default)
-	}
-
-	func (m boolEnforceDefaultValueModifier) MarkdownDescription(ctx context.Context) string {
-		return fmt.Sprintf("If value is not configured, enforces `%t`", m.Default)
-	}
-
-	func (m boolEnforceDefaultValueModifier) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
-		if req.ConfigValue.IsNull() {
-			resp.PlanValue = types.BoolValue(m.Default)
-			tflog.Info(ctx, "Enforcing default value")
-		}
-	}
-*/
 type stringPrivateUnknownModifier struct {
 	Suffix string
 }
@@ -561,11 +570,19 @@ func (m stringPrivateUnknownModifier) MarkdownDescription(ctx context.Context) s
 }
 
 func (m stringPrivateUnknownModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	data, diag := req.Private.GetKey(ctx, fmt.Sprintf("mark_unknown_%s", m.Suffix))
+	v, diag := req.Private.GetKey(ctx, fmt.Sprintf("mark_unknown_%s", m.Suffix))
 	resp.Diagnostics.Append(diag...)
 
-	if data != nil {
-		if string(data) == "1" {
+	var data *UserResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+
+	// if a user specifies not to generate credentials mark keys as unknown so they can be removed from state
+	if !data.GenerateS3Credentials.ValueBool() {
+		resp.PlanValue = types.StringUnknown()
+	}
+
+	if v != nil {
+		if string(v) == "1" {
 			resp.PlanValue = types.StringUnknown()
 		}
 	}
