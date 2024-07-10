@@ -101,7 +101,7 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "Specify how to deal with s3 credentials for this user not managed by this resource. Set to `true` to delete all other s3 credentials. Set to `false` to ignore other credentials.",
 				Optional:            true,
 			},
-			"caps": schema.ListNestedAttribute{
+			"caps": schema.SetNestedAttribute{
 				Optional: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -228,7 +228,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		for i, c := range data.Caps {
 			rgwUser.Caps[i] = admin.UserCapSpec{
 				Type: c.Type.ValueString(),
-				Perm: c.Type.ValueString(),
+				Perm: c.Perm.ValueString(),
 			}
 		}
 	}
@@ -247,6 +247,20 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	if err != nil {
 		resp.Diagnostics.AddError("could not create user", err.Error())
 		return
+	}
+
+	if len(data.Caps) > 0 {
+		userCapSlice := make([]string, len(data.Caps))
+
+		for i, c := range data.Caps {
+			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
+		}
+		userCap := strings.Join(userCapSlice, ",")
+		_, err := r.client.Admin.AddUserCap(ctx, createdUser.ID, userCap)
+		if err != nil {
+			resp.Diagnostics.AddError("could not add user cap", err.Error())
+			return
+		}
 	}
 
 	// set resource id
@@ -323,7 +337,6 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		data.Email = types.StringValue("")
 	}
 
-	// update caps
 	if len(user.Caps) > 0 {
 		data.Caps = make([]UserCapModel, len(user.Caps))
 		for i, c := range user.Caps {
@@ -331,7 +344,7 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 			data.Caps[i].Perm = types.StringValue(c.Perm)
 		}
 	} else {
-		user.Caps = nil
+		data.Caps = nil
 	}
 
 	// update max_buckets
@@ -386,7 +399,13 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	// Read Terraform plan data into the model
 	var data *UserResourceModel
+	var dataState *UserResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(req.State.Get(ctx, &dataState)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -409,7 +428,7 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		for i, c := range data.Caps {
 			update.Caps[i] = admin.UserCapSpec{
 				Type: c.Type.ValueString(),
-				Perm: c.Type.ValueString(),
+				Perm: c.Perm.ValueString(),
 			}
 		}
 	}
@@ -430,6 +449,36 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	if err != nil {
 		resp.Diagnostics.AddError("could not modify user", err.Error())
 		return
+	}
+
+	// update caps
+	if len(dataState.Caps) > 0 {
+		tflog.Info(ctx, fmt.Sprintf("user caps from state are %v", dataState.Caps))
+		userCapSlice := make([]string, len(dataState.Caps))
+		for i, c := range dataState.Caps {
+			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
+		}
+		userCap := strings.Join(userCapSlice, ",")
+		_, err := r.client.Admin.RemoveUserCap(ctx, data.Id.ValueString(), userCap)
+		if err != nil {
+			resp.Diagnostics.AddError("could not remove user cap", err.Error())
+			return
+		}
+	}
+
+	if len(data.Caps) > 0 {
+		//usercaps = ""
+		userCapSlice := make([]string, len(data.Caps))
+
+		for i, c := range data.Caps {
+			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
+		}
+		userCap := strings.Join(userCapSlice, ",")
+		_, err := r.client.Admin.AddUserCap(ctx, data.Id.ValueString(), userCap)
+		if err != nil {
+			resp.Diagnostics.AddError("could not add user cap", err.Error())
+			return
+		}
 	}
 
 	// manage s3 keys
