@@ -223,16 +223,6 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	rgwUser.GenerateKey = &generateKey
 
-	if len(data.Caps) > 0 {
-		rgwUser.Caps = make([]admin.UserCapSpec, len(data.Caps))
-		for i, c := range data.Caps {
-			rgwUser.Caps[i] = admin.UserCapSpec{
-				Type: c.Type.ValueString(),
-				Perm: c.Perm.ValueString(),
-			}
-		}
-	}
-
 	maxBuckets := int(data.MaxBuckets.ValueInt64())
 	rgwUser.MaxBuckets = &maxBuckets
 
@@ -255,7 +245,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		for i, c := range data.Caps {
 			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
 		}
-		userCap := strings.Join(userCapSlice, ",")
+		userCap := strings.Join(userCapSlice, ";")
 		_, err := r.client.Admin.AddUserCap(ctx, createdUser.ID, userCap)
 		if err != nil {
 			resp.Diagnostics.AddError("could not add user cap", err.Error())
@@ -422,17 +412,6 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	generate := false
 	update.GenerateKey = &generate
 
-	// set user caps
-	if len(data.Caps) > 0 {
-		update.Caps = make([]admin.UserCapSpec, len(data.Caps))
-		for i, c := range data.Caps {
-			update.Caps[i] = admin.UserCapSpec{
-				Type: c.Type.ValueString(),
-				Perm: c.Perm.ValueString(),
-			}
-		}
-	}
-
 	// set max_buckets
 	maxBuckets := int(data.MaxBuckets.ValueInt64())
 	update.MaxBuckets = &maxBuckets
@@ -453,12 +432,11 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	// update caps
 	if len(dataState.Caps) > 0 {
-		tflog.Info(ctx, fmt.Sprintf("user caps from state are %v", dataState.Caps))
 		userCapSlice := make([]string, len(dataState.Caps))
 		for i, c := range dataState.Caps {
 			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
 		}
-		userCap := strings.Join(userCapSlice, ",")
+		userCap := strings.Join(userCapSlice, ";")
 		_, err := r.client.Admin.RemoveUserCap(ctx, data.Id.ValueString(), userCap)
 		if err != nil {
 			resp.Diagnostics.AddError("could not remove user cap", err.Error())
@@ -473,7 +451,7 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		for i, c := range data.Caps {
 			userCapSlice[i] = fmt.Sprintf("%s=%s", c.Type.ValueString(), c.Perm.ValueString())
 		}
-		userCap := strings.Join(userCapSlice, ",")
+		userCap := strings.Join(userCapSlice, ";")
 		_, err := r.client.Admin.AddUserCap(ctx, data.Id.ValueString(), userCap)
 		if err != nil {
 			resp.Diagnostics.AddError("could not add user cap", err.Error())
