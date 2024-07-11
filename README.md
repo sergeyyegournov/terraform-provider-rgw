@@ -1,6 +1,10 @@
 # Terraform Provider Ceph RGW
 
-Dieser Provider kann S3 User, Buckets und Bucket Policies in Ceph RadosGW anlegen. Er wird hauptsächlich intern bei Startnext verwendet.
+This fork addresses few issues in the original provider:
+* keys are not replaced on every user update
+* user caps are applied correctly
+  
+It also supports `bucket_link`, `bucket_quota` and `quota` resources
 
 ## Requirements
 
